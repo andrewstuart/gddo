@@ -269,6 +269,42 @@ func servePackage(resp http.ResponseWriter, req *http.Request) error {
 		}
 	}
 
+	requestorAccepts := req.Header.Get("Accept")
+
+	if requestorAccepts == "application/json" || requestorAccepts == jsonMIMEType {
+		resp.Header().Set("Access-Control-Allow-Origin", "*")
+		resp.Header().Set("Content-Type", jsonMIMEType)
+
+		switch {
+		case isView(req, "import-graph"):
+			if pdoc.Name == "" {
+				break
+			}
+			hide := database.ShowAllDeps
+			switch req.Form.Get("hide") {
+			case "1":
+				hide = database.HideStandardDeps
+			case "2":
+				hide = database.HideStandardAll
+			}
+			pkgs, edges, err := db.ImportGraph(pdoc, hide)
+			if err != nil {
+				return err
+			}
+
+			err = json.NewEncoder(resp).Encode(map[string]interface{}{
+				"pkgs":  pkgs,
+				"edges": edges,
+			})
+			return err
+		}
+		err := json.NewEncoder(resp).Encode(pdoc)
+		if err != nil {
+			log.Println("error encoding json:", err)
+		}
+		return err
+	}
+
 	switch {
 	case len(req.Form) == 0:
 		importerCount := 0
@@ -367,6 +403,7 @@ func servePackage(resp http.ResponseWriter, req *http.Request) error {
 		if err != nil {
 			return err
 		}
+
 		b, err := renderGraph(pdoc, pkgs, edges)
 		if err != nil {
 			return err
@@ -408,6 +445,15 @@ func servePackage(resp http.ResponseWriter, req *http.Request) error {
 }
 
 func serveRefresh(resp http.ResponseWriter, req *http.Request) error {
+	if req.Method == "OPTIONS" {
+		h := resp.Header()
+		h.Set("Access-Control-Allow-Origin", "*")
+		h.Set("Access-Control-Allow-Methods", "POST")
+		h.Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+		resp.WriteHeader(http.StatusOK)
+		return nil
+	}
+
 	importPath := req.Form.Get("path")
 	_, pkgs, _, err := db.Get(importPath)
 	if err != nil {
@@ -459,6 +505,18 @@ func serveIndex(resp http.ResponseWriter, req *http.Request) error {
 	if err != nil {
 		return err
 	}
+
+	if strings.ToLower(req.Header.Get("Accept")) == "application/json" {
+		resp.Header().Set("Access-Control-Allow-Origin", "*")
+
+		err = json.NewEncoder(resp).Encode(pkgs)
+		if err != nil {
+			log.Println(err)
+			return err
+		}
+		return nil
+	}
+
 	return executeTemplate(resp, "index.html", http.StatusOK, nil, map[string]interface{}{
 		"pkgs": pkgs,
 	})
@@ -564,6 +622,13 @@ func serveHome(resp http.ResponseWriter, req *http.Request) error {
 
 	pkgs, err := db.Query(q)
 	if err != nil {
+		return err
+	}
+
+	if req.Header.Get("Accept") == "application/json" {
+		resp.Header().Set("Access-Control-Allow-Origin", "*")
+		resp.Header().Set("Content-Type", jsonMIMEType)
+		err := json.NewEncoder(resp).Encode(pkgs)
 		return err
 	}
 
@@ -724,6 +789,7 @@ func (h handler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 type apiHandler func(resp http.ResponseWriter, req *http.Request) error
 
 func (h apiHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	resp.Header().Set("Access-Control-Allow-Origin", "*")
 	runHandler(resp, req, h, handleAPIError)
 }
 

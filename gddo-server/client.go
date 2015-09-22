@@ -14,7 +14,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
+
+	"golang.org/x/oauth2"
 )
 
 var (
@@ -70,9 +73,15 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.t.RoundTrip(req)
 }
 
-var httpClient = &http.Client{Transport: &transport{
-	t: http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		Dial:  timeoutDial,
-		ResponseHeaderTimeout: *requestTimeout / 2,
-	}}}
+var httpClient = &http.Client{
+	Transport: &oauth2.Transport{
+		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")}),
+		Base: &transport{
+			t: http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				Dial:  timeoutDial,
+				ResponseHeaderTimeout: *requestTimeout / 2,
+			},
+		},
+	},
+}
